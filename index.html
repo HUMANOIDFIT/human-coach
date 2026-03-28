@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HUMAN Coach</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#030712;color:#fff;min-height:100vh;display:flex;flex-direction:column}
+header{border-bottom:1px solid #1f2937;padding:12px 16px;display:flex;align-items:center;justify-content:space-between}
+header h1{font-size:18px;font-weight:600}
+.header-btns{display:flex;gap:8px}
+.btn-sm{font-size:12px;padding:6px 12px;border-radius:9999px;border:none;cursor:pointer;transition:all .2s}
+.btn-gray{background:#1f2937;color:#9ca3af}
+.btn-gray:hover{background:#374151}
+.btn-green{background:#059669;color:#fff}
+.btn-green:hover{background:#047857}
+main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.transcript{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px}
+.msg{max-width:80%;padding:8px 12px;border-radius:12px;font-size:14px;line-height:1.4}
+.msg-label{font-size:10px;text-transform:uppercase;letter-spacing:.05em;opacity:.5;margin-bottom:4px}
+.msg-manager{align-self:flex-end;background:rgba(30,58,138,.5);color:#93c5fd;border-bottom-right-radius:2px}
+.msg-client{align-self:flex-start;background:#1f2937;color:#d1d5db;border-bottom-left-radius:2px}
+.coach-box{border-top:1px solid #1f2937;padding:20px 16px;min-height:120px;display:flex;align-items:center;justify-content:center}
+.coach-text{font-size:24px;font-weight:500;text-align:center;line-height:1.5;max-width:640px;padding:0 16px}
+.coach-hint{color:#6b7280;font-size:14px;text-align:center}
+.empty-state{flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;color:#6b7280;font-size:14px;text-align:center;padding:20px}
+footer{border-top:1px solid #1f2937;padding:16px;display:flex;flex-direction:column;gap:12px}
+.input-row{display:flex;gap:8px;align-items:center}
+.input-row input{flex:1;background:#111827;border:1px solid #374151;border-radius:8px;padding:10px 12px;font-size:14px;color:#fff;outline:none}
+.input-row input:focus{border-color:#6b7280}
+.input-row input::placeholder{color:#6b7280}
+.btn-send{background:#059669;color:#fff;border:none;padding:10px 20px;border-radius:8px;font-size:14px;font-weight:500;cursor:pointer;transition:all .2s}
+.btn-send:hover{background:#047857}
+.mic-row{display:flex;justify-content:center;align-items:center;gap:12px}
+.btn-mic{width:52px;height:52px;border-radius:50%;border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .2s;background:#374151}
+.btn-mic:hover{background:#4b5563}
+.btn-mic.active{background:#dc2626;animation:pulse 1.5s infinite}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(220,38,38,.4)}50%{box-shadow:0 0 0 12px rgba(220,38,38,0)}}
+.btn-mic svg{width:20px;height:20px;fill:#fff}
+.status{color:#ef4444;font-size:12px;text-align:center}
+.status-info{color:#9ca3af;font-size:12px;text-align:center}
+.toggle-manager{font-size:10px;padding:4px 8px;border-radius:4px;background:#1f2937;color:#6b7280;border:none;cursor:pointer;transition:all .2s}
+.toggle-manager:hover{color:#d1d5db}
+.model-status{font-size:11px;color:#6b7280;text-align:center}
+.model-status.ready{color:#059669}
+.model-status.loading{color:#f59e0b}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>HUMAN Coach</h1>
+  <div class="header-btns">
+    <button class="btn-sm btn-gray" id="btnReset">Сброс</button>
+  </div>
+</header>
+
+<main>
+  <div class="transcript" id="transcript"></div>
+  <div class="coach-box" id="coachBox">
+    <p class="coach-hint" id="coachHint">Введите фразу менеджера, затем клиента</p>
+    <p class="coach-text" id="coachText" style="display:none"></p>
+  </div>
+</main>
+
+<footer>
+  <div id="status" class="status" style="display:none"></div>
+  <div id="modelStatus" class="model-status">Загрузка модели распознавания...</div>
+  <div class="input-row">
+    <button class="toggle-manager" id="toggleManager" title="Следующая фраза — менеджер">Менеджер →</button>
+    <input type="text" id="inputField" placeholder="Введите фразу..." autocomplete="off">
+    <button class="btn-send" id="btnSend">→</button>
+  </div>
+  <div class="mic-row">
+    <button class="btn-mic" id="btnMic" title="Микрофон">
+      <svg viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1 1.93c-3.94-.49-7-3.85-7-7.93h2c0 3.31 2.69 6 6 6s6-2.69 6-6h2c0 4.08-3.06 7.44-7 7.93V20h4v2H8v-2h4v-4.07z"/></svg>
+    </button>
+    <span id="micHint" class="status-info"></span>
+  </div>
+</footer>
+
+<script type="module">
+import { pipeline } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2';
+
+const transcript = document.getElementById('transcript');
+const coachText = document.getElementById('coachText');
+const coachHint = document.getElementById('coachHint');
+const inputField = document.getElementById('inputField');
+const btnSend = document.getElementById('btnSend');
+const btnMic = document.getElementById('btnMic');
+const btnReset = document.getElementById('btnReset');
+const toggleManager = document.getElementById('toggleManager');
+const statusEl = document.getElementById('status');
+const modelStatusEl = document.getElementById('modelStatus');
+const micHint = document.getElementById('micHint');
+
+let entries = [];
+let firstSpeakerLocked = false;
+let lastSpeaker = null;
+let whisperPipeline = null;
+let isRecording = false;
+let mediaRecorder = null;
+let audioChunks = [];
+let modelReady = false;
+
+async function loadModel() {
+  modelStatusEl.textContent = 'Загрузка модели Whisper... (~75MB)';
+  modelStatusEl.className = 'model-status loading';
+  try {
+    whisperPipeline = await pipeline('automatic-speech-recognition', 'Xenova/whisper-tiny', {
+      quantized: true,
+      progress_callback: (progress) => {
+        if (progress.status === 'progress') {
+          const pct = Math.round(progress.progress || 0);
+          modelStatusEl.textContent = `Загрузка модели... ${pct}%`;
+        } else if (progress.status === 'ready') {
+          modelStatusEl.textContent = 'Модель готова';
+          modelStatusEl.className = 'model-status ready';
+          modelReady = true;
+        }
+      }
+    });
+    if (!modelReady) {
+      modelStatusEl.textContent = 'Модель готова';
+      modelStatusEl.className = 'model-status ready';
+      modelReady = true;
+    }
+  } catch (e) {
+    modelStatusEl.textContent = 'Ошибка загрузки модели: ' + e.message;
+    modelStatusEl.className = 'model-status';
+  }
+}
+
+loadModel();
+
+const RESPONSES = {
+  try_month: [
+    "Месяц — только знакомство. Результат приходит за три-четыре месяца системных тренировок",
+    "Попробовать можно, но за месяц только войдёте в ритм. Годовая карта даёт прогресс",
+    "Многие начинают с месяца и потом жалеют — длиннее выгоднее и проще",
+    "Двенадцать месяцев — не обязательство навсегда, а решение не покупать карту каждый месяц",
+  ],
+  expensive: [
+    "Найдёшь дешевле — тренируем бесплатно. Сравните стоимость тренировки в длинной карте",
+    "Не цена решает, а что получаете. Мини-группы, сауны, ИИ — всё в карте",
+    "Дорого — это когда платишь больше и получаешь меньше. У нас длинная карта максимум",
+    "Стоимость тренировки в годовой карте — от 333 рублей. В месяц — в разы дороже",
+  ],
+  bank_issue: [
+    "Можно оплатить наличными — без банка, без кредитов, без лишних вопросов",
+    "Вопрос не в банке, а в выгодном формате. Есть вариант наличными по сниженной сумме",
+    "Банк — просто инструмент. Есть и другие способы оплаты, включая наличные",
+  ],
+  summer_leave: [
+    "У нас есть заморозка — она покроет перерыв в отъезде, срок не сгорит",
+    "Поездка — не повод отказываться от выгодной карты. Заморозка сохраняет дни",
+    "Даже с отъездом годовая карта выгоднее — фиксируете цену и сохраняете срок",
+  ],
+  doubt_self: [
+    "Именно поэтому длинная карта лучше — она работает как дисциплина и опора",
+    "Месячный формат облегчает срыв. Длинная карта помогает удержаться и дойти до результата",
+    "Когда у тебя длинная карта, ты не думаешь бросить — просто идёшь и занимаешься",
+    "Неуверенность — нормально. Но системность, а не месяц, решает этот вопрос",
+  ],
+  think_about_it: [
+    "Что именно вас останавливает? Может, решим прямо сейчас, без откладывания",
+    "Когда уходишь думать, решение часто не принимается. Давайте разберёмся",
+    "Давайте вскроем, что вызывает сомнение — возможно, это проще, чем кажется",
+  ],
+  no_money: [
+    "Отделим вопрос карты от оплаты. Сначала формат, способ оплаты — подберём",
+    "Если годовой платёж тяжело сразу, есть вариант по месяцам — срок остаётся выгодным",
+    "Шестимесячный формат снижает единовременный платёж, но вы получаете выгоду",
+  ],
+  enough_month: [
+    "Месяц — только старт. За тридцать дней только адаптируетесь, результат — дальше",
+    "За месяц познакомитесь с клубом, но не увидите эффект. Шесть месяцев — рабочий срок",
+    "Месячный формат не даёт результата. Это как бросить учить язык через урок",
+  ],
+  buying_signal: [
+    "Отличный выбор. Давайте оформим, чтобы вы сегодня уже начали тренировки",
+    "Переходим к оформлению. Оплата наличными или в рассрочку?",
+    "Идём к администратору, оформим карту — сегодня же сможете начать",
+  ],
+  price_question: [
+    "Годовая с полным доступом — двадцать семьсот пятьдесят в месяц или наличными выгоднее",
+    "Есть формат без вечера — от двух тысяч в месяц. Но если важен вечер, полный лучше",
+    "Давайте определим какой доступ нужен, подберу оптимальный формат по цене",
+  ],
+  family: [
+    "У нас семейный доступ — родственник бесплатно с десяти до пяти",
+    "Годовая карта включает семейный доступ. Дополнительная польза для семьи без доплаты",
+  ],
+  schedule: [
+    "Доступ двадцать четыре на семь — единственный такой клуб в Иркутске",
+    "Круглосуточный доступ решает вопрос графика. Рано утром, поздно вечером — зал работает",
+  ],
+  technology: [
+    "Тренировки с гаджетом под контролем ИИ — нагрузка отслеживается в реальном времени",
+    "Цифровой контроль результата — не просто занимаетесь, а отслеживаете прогресс по данным",
+  ],
+  compare: [
+    "Найдёшь дешевле — тренируем бесплатно. Плюс ИИ, мини-группы, сауны, 24/7",
+    "Единственный клуб с круглосуточным доступом и тренировками под контролем ИИ",
+    "Подарки за результат, розыгрыши карт, семейный доступ — набор, которого нет в других",
+  ],
+  convenient: [
+    "Удобно сейчас — не значит выгодно. Длинная карта снимает вопрос покупки на год",
+    "Короткий формат кажется проще, но длинный срок формирует привычку и удерживает результат",
+    "Удобство — когда приходишь и занимаешься, а не каждый месяц решаешь продлевать или нет",
+  ],
+  interest: [
+    "Давайте подберём формат, который даст вам максимум результата",
+    "Главное — выбрать срок, чтобы успели войти в систему и получить эффект",
+    "Чтобы увидеть настоящий результат, нужна системность. Годовой формат — лучший выбор",
+  ],
+  general: [
+    "Главное — выбрать срок, который даст реальный результат. Двенадцать месяцев — оптимально",
+    "Давайте подберём формат, который встроится в вашу жизнь и даст максимум пользы",
+    "Чем дольше срок — тем больше вы получаете и по наполнению карты, и по результату",
+  ],
+};
+
+function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+function match(text, patterns) { return patterns.some(p => text.includes(p)); }
+
+function getCoachResponse() {
+  const clientEntries = entries.filter(e => e.speaker === 'client');
+  if (clientEntries.length === 0) return '';
+  const last = clientEntries[clientEntries.length - 1].text.toLowerCase();
+  if (match(last, ['давай', 'да', 'окей', 'хорошо', 'согласен', 'беру', 'оформляем', 'идём', 'подходит', 'устроит'])) return pick(RESPONSES.buying_signal);
+  if (match(last, ['семь', 'семейн', 'жена', 'муж', 'ребёнок', 'родствен'])) return pick(RESPONSES.family);
+  if (match(last, ['график', 'рано', 'поздно', 'время', 'когда приходить', 'во сколько'])) return pick(RESPONSES.schedule);
+  if (match(last, ['гаджет', 'приложени', 'искусственн', 'контрол', 'технолог'])) return pick(RESPONSES.technology);
+  if (match(last, ['другой клуб', 'сравни', 'конкурент', 'у них', 'а в другом', 'почему именно', 'чем отличаетесь'])) return pick(RESPONSES.compare);
+  if (match(last, ['подумаю', 'подожду', 'ещё не решил', 'не сейчас', 'потом', 'позже', 'вернусь'])) return pick(RESPONSES.think_about_it);
+  if (match(last, ['не знаю', 'не уверен'])) return pick(RESPONSES.doubt_self);
+  if (match(last, ['дорог', 'много', 'сумм', 'стоимост', 'цен', 'бюджет'])) return pick(RESPONSES.expensive);
+  if (match(last, ['нет денег', 'сейчас нет', 'не могу', 'финанс', 'сразу много', 'платить сразу', 'рассрочк'])) return pick(RESPONSES.no_money);
+  if (match(last, ['банк'])) return pick(RESPONSES.bank_issue);
+  if (match(last, ['лет', 'уед'])) return pick(RESPONSES.summer_leave);
+  if (match(last, ['попроб', 'начн', 'пока', 'для начала', 'сперва'])) return pick(RESPONSES.try_month);
+  if (match(last, ['удобн', 'комфортн', 'мне так', 'привыч', 'проще', 'просто'])) return pick(RESPONSES.convenient);
+  if (match(last, ['хватит месяца', 'одного месяца', 'на месяц', 'месячн'])) return pick(RESPONSES.enough_month);
+  if (match(last, ['сколько', 'какая цена', 'что входит', 'что включено', 'формат', 'вариант', 'какие карты'])) return pick(RESPONSES.price_question);
+  if (clientEntries.length === 1) return pick(RESPONSES.interest);
+  return pick(RESPONSES.general);
+}
+
+function addEntry(speaker, text) {
+  const div = document.createElement('div');
+  div.className = 'msg msg-' + speaker;
+  div.innerHTML = '<div class="msg-label">' + (speaker === 'manager' ? 'Менеджер' : 'Клиент') + '</div>' + text;
+  transcript.appendChild(div);
+  transcript.scrollTop = transcript.scrollHeight;
+  entries.push({ speaker, text, time: Date.now() });
+}
+
+function showCoach(text) {
+  coachText.textContent = text;
+  coachText.style.display = 'block';
+  coachHint.style.display = 'none';
+}
+
+function processPhrase(text) {
+  let speaker;
+  if (!firstSpeakerLocked) {
+    speaker = 'manager';
+    firstSpeakerLocked = true;
+    lastSpeaker = 'manager';
+  } else if (lastSpeaker === 'manager') {
+    speaker = 'client';
+    lastSpeaker = 'client';
+  } else {
+    speaker = 'client';
+    lastSpeaker = 'client';
+  }
+  addEntry(speaker, text);
+  if (speaker === 'client') {
+    const response = getCoachResponse();
+    if (response) showCoach(response);
+  }
+}
+
+function sendPhrase() {
+  const text = inputField.value.trim();
+  if (!text) return;
+  processPhrase(text);
+  inputField.value = '';
+  inputField.focus();
+}
+
+btnSend.addEventListener('click', sendPhrase);
+inputField.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); sendPhrase(); }});
+toggleManager.addEventListener('click', () => { lastSpeaker = 'manager'; });
+
+btnReset.addEventListener('click', () => {
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') { mediaRecorder.stop(); }
+  isRecording = false;
+  btnMic.classList.remove('active');
+  micHint.textContent = '';
+  entries = [];
+  firstSpeakerLocked = false;
+  lastSpeaker = null;
+  transcript.innerHTML = '';
+  coachText.style.display = 'none';
+  coachHint.style.display = 'block';
+  statusEl.style.display = 'none';
+  inputField.value = '';
+});
+
+btnMic.addEventListener('click', async () => {
+  if (!modelReady) {
+    statusEl.textContent = 'Модель ещё загружается, подождите...';
+    statusEl.style.display = 'block';
+    return;
+  }
+
+  if (isRecording) {
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      mediaRecorder.stop();
+    }
+    isRecording = false;
+    btnMic.classList.remove('active');
+    micHint.textContent = '';
+    return;
+  }
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    audioChunks = [];
+    mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+
+    mediaRecorder.ondataavailable = (e) => {
+      if (e.data.size > 0) audioChunks.push(e.data);
+    };
+
+    mediaRecorder.onstop = async () => {
+      stream.getTracks().forEach(t => t.stop());
+      micHint.textContent = 'Распознаю...';
+      try {
+        const blob = new Blob(audioChunks, { type: 'audio/webm' });
+        const arrayBuffer = await blob.arrayBuffer();
+        const audioCtx = new AudioContext({ sampleRate: 16000 });
+        const decoded = await audioCtx.decodeAudioData(arrayBuffer);
+        const float32 = decoded.getChannelData(0);
+
+        const result = await whisperPipeline(float32, {
+          language: 'ru',
+          task: 'transcribe',
+        });
+
+        const text = (result.text || '').trim();
+        if (text) {
+          processPhrase(text);
+          micHint.textContent = '';
+        } else {
+          micHint.textContent = 'Ничего не распознано';
+        }
+      } catch (err) {
+        micHint.textContent = 'Ошибка: ' + err.message;
+      }
+      statusEl.style.display = 'none';
+    };
+
+    mediaRecorder.start();
+    isRecording = true;
+    btnMic.classList.add('active');
+    micHint.textContent = 'Говорите...';
+    statusEl.style.display = 'none';
+  } catch (e) {
+    statusEl.textContent = 'Нет доступа к микрофону. Разрешите в настройках браузера.';
+    statusEl.style.display = 'block';
+  }
+});
+</script>
+</body>
+</html>
